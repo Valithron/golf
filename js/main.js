@@ -20,5 +20,5 @@ function gameLoop(now){
 buildCourse();
 resizeCanvas();
 updateHud();
-Body.setSleeping(ball,true);
+Sleeping.set(ball,true);
 requestAnimationFrame(gameLoop);
