@@ -11,5 +11,22 @@ restartButton.addEventListener("click",restartCourse);recoverButton.addEventList
 window.addEventListener("keydown",event=>{if(event.repeat)return;const key=event.key.toLowerCase();if(key==="r")restartCourse();if(key==="h"||key==="?")helpButton.click();if(key==="m")soundButton.click();if(key==="escape")instructions.classList.add("hidden")});
 Events.on(engine,"collisionStart",event=>{if(!state.audioEnabled||state.sinking)return;const now=performance.now();if(now-state.collisionSoundAt<90)return;for(const pair of event.pairs){const labels=[pair.bodyA.label,pair.bodyB.label];if(labels.includes("golf-ball")&&(labels.includes("course-wall")||labels.includes("bumper"))){if(ball.speed>1.4){state.collisionSoundAt=now;playTone(170+Math.min(ball.speed,10)*14,.035,"triangle",.018)}break}}});
 function updateTrail(){if(state.sinking||ball.speed<.45){if(state.trail.length>0)state.trail.shift();return}const previous=state.trail.at(-1);if(!previous||Vector.magnitudeSquared(Vector.sub(ball.position,previous))>20){state.trail.push({x:ball.position.x,y:ball.position.y});if(state.trail.length>16)state.trail.shift()}}
-function resizeCanvas(){const cssWidth=innerWidth,cssHeight=innerHeight,dpr=Math.min(devicePixelRatio||1,2),scale=Math.min(cssWidth/CONFIG.worldWidth,cssHeight/CONFIG.worldHeight),offsetX=(cssWidth-CONFIG.worldWidth*scale)/2,offsetY=(cssHeight-CONFIG.worldHeight*scale)/2;state.viewport={cssWidth,cssHeight,dpr,scale,offsetX,offsetY};canvas.width=Math.max(1,Math.round(cssWidth*dpr));canvas.height=Math.max(1,Math.round(cssHeight*dpr));canvas.style.width=`${cssWidth}px`;canvas.style.height=`${cssHeight}px`}
+function resizeCanvas(){
+  const cssWidth=innerWidth;
+  const cssHeight=innerHeight;
+  const dpr=Math.min(devicePixelRatio||1,2);
+  const isNarrow=cssWidth<=700;
+  const hud=document.querySelector(".hud");
+  const measuredHudBottom=hud?hud.getBoundingClientRect().bottom:0;
+  const topReserve=isNarrow?Math.min(cssHeight*.32,Math.max(0,measuredHudBottom+12)):0;
+  const usableHeight=Math.max(280,cssHeight-topReserve);
+  const scale=Math.min(cssWidth/CONFIG.worldWidth,usableHeight/CONFIG.worldHeight);
+  const offsetX=(cssWidth-CONFIG.worldWidth*scale)/2;
+  const offsetY=topReserve+(usableHeight-CONFIG.worldHeight*scale)/2;
+  state.viewport={cssWidth,cssHeight,dpr,scale,offsetX,offsetY};
+  canvas.width=Math.max(1,Math.round(cssWidth*dpr));
+  canvas.height=Math.max(1,Math.round(cssHeight*dpr));
+  canvas.style.width=`${cssWidth}px`;
+  canvas.style.height=`${cssHeight}px`;
+}
 addEventListener("resize",resizeCanvas,{passive:true});addEventListener("orientationchange",resizeCanvas,{passive:true});
