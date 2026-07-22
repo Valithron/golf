@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no" />
+  <meta name="theme-color" content="#123f35" />
+  <meta name="description" content="A colorful, touch-friendly single-hole mini-golf game built with Matter.js." />
+  <title>Meadow Putt</title>
+
+  <!-- Pinned CDN builds for a stable browser prototype. -->
+  <script src="https://cdn.jsdelivr.net/npm/matter-js@0.20.0/build/matter.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.9.4/dist/confetti.browser.min.js"></script>
+
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <main id="app" aria-label="Meadow Putt mini-golf game">
+    <canvas id="gameCanvas" aria-label="Mini-golf course"></canvas>
+
+    <section class="hud" aria-label="Game score">
+      <div class="score-card">
+        <div class="stat">
+          <span class="stat-label">Holes</span>
+          <span class="stat-value"><span id="holesValue">0</span>/<span id="goalValue">5</span></span>
+        </div>
+        <div class="stat">
+          <span class="stat-label">This hole</span>
+          <span class="stat-value" id="shotsValue">0</span>
+        </div>
+        <div class="stat">
+          <span class="stat-label">Total</span>
+          <span class="stat-value" id="totalValue">0</span>
+        </div>
+      </div>
+
+      <div class="hud-actions">
+        <button class="icon-button" id="helpButton" type="button" aria-label="Show instructions">?</button>
+        <button class="icon-button" id="soundButton" type="button" aria-label="Toggle sound" title="Sound (M)">♪</button>
+        <button class="icon-button" id="recoverButton" type="button" aria-label="Return ball to previous position with one penalty stroke" title="Recover ball (+1)">↶</button>
+        <button class="icon-button" id="restartButton" type="button" aria-label="Restart course" title="Restart course (R)">↻</button>
+      </div>
+    </section>
+
+    <aside id="instructions">
+      <strong>Pull back, then release</strong>
+      <span>Start on the glowing ball. Drag opposite the shot direction. Longer means stronger. Use ↶ if the ball gets stuck.</span>
+    </aside>
+
+    <div id="toast" role="status" aria-live="polite">Nice!</div>
+
+    <section class="modal" id="finishModal" role="dialog" aria-modal="true" aria-labelledby="finishTitle">
+      <div class="modal-card">
+        <p class="modal-kicker">Course complete</p>
+        <h1 id="finishTitle">You did it!</h1>
+        <p id="resultSummary">You finished five holes in <strong id="finalScore">0</strong> total shots.</p>
+        <button class="primary-button" id="playAgainButton" type="button">Play again</button>
+      </div>
+    </section>
+  </main>
+
+  <script defer src="js/core.js"></script>
+  <script defer src="js/render.js"></script>
+  <script defer src="js/main.js"></script>
+</body>
+</html>
