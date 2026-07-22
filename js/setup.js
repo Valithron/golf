@@ -1,21 +1,293 @@
-"use strict";
-const CONFIG=Object.freeze({worldWidth:620,worldHeight:1160,ballRadius:13,wallThickness:34,maxDrag:175,powerMultiplier:.071,touchAimRadius:60,mouseAimRadius:43,maxBallSpeed:15.5,frictionAir:.017,restitution:.58,slopeForce:.000055,humpForce:.000032,lowSpeedCutoff:.035,holeCaptureRadius:34,holeCaptureSpeed:2.25,completionsToWin:5,parPerHole:3,recoveryPenalty:1,confettiAmount:110,fixedStepMs:1e3/60,maxFrameMs:50});
-const{Engine,World,Bodies,Body,Events,Vertices,Vector}=Matter;
-const canvas=document.getElementById("gameCanvas"),ctx=canvas.getContext("2d",{alpha:false}),holesValue=document.getElementById("holesValue"),shotsValue=document.getElementById("shotsValue"),totalValue=document.getElementById("totalValue"),goalValue=document.getElementById("goalValue"),instructions=document.getElementById("instructions"),toast=document.getElementById("toast"),finishModal=document.getElementById("finishModal"),finalScore=document.getElementById("finalScore"),resultSummary=document.getElementById("resultSummary"),restartButton=document.getElementById("restartButton"),helpButton=document.getElementById("helpButton"),soundButton=document.getElementById("soundButton"),recoverButton=document.getElementById("recoverButton"),playAgainButton=document.getElementById("playAgainButton");
-goalValue.textContent=CONFIG.completionsToWin;
-const engine=Engine.create({enableSleeping:true});engine.gravity.x=0;engine.gravity.y=0;engine.gravity.scale=0;
-const TEE=Object.freeze({x:310,y:1025}),HOLE=Object.freeze({x:438,y:154});
-const leftBoundary=[{x:180,y:1095},{x:92,y:1010},{x:78,y:885},{x:165,y:765},{x:128,y:645},{x:54,y:530},{x:108,y:397},{x:190,y:255},{x:282,y:103}],rightBoundary=[{x:440,y:1095},{x:532,y:1005},{x:523,y:870},{x:418,y:760},{x:472,y:640},{x:566,y:535},{x:507,y:395},{x:449,y:253},{x:526,y:102}];
-const state={holes:0,shots:0,totalShots:0,firstShotTaken:false,aiming:false,activePointerId:null,dragPoint:{...TEE},sinking:false,sinkStartedAt:0,sinkScale:1,runComplete:false,audioEnabled:true,collisionSoundAt:0,lastShotPosition:{...TEE},trail:[],pendingTimers:new Set,viewport:{cssWidth:1,cssHeight:1,dpr:1,scale:1,offsetX:0,offsetY:0}};
-let ball,holeSensor,coursePath,lastFrame=performance.now(),accumulator=0,audioContext=null;
-function schedule(callback,delay){const timer=setTimeout(()=>{state.pendingTimers.delete(timer);callback()},delay);state.pendingTimers.add(timer);return timer}
-function clearScheduledActions(){for(const timer of state.pendingTimers)clearTimeout(timer);state.pendingTimers.clear()}
-function vibrate(pattern){if(typeof navigator.vibrate==="function")navigator.vibrate(pattern)}
-function setBallAt(position,sleeping=true){Body.setStatic(ball,false);Body.setPosition(ball,{x:position.x,y:position.y});Body.setVelocity(ball,{x:0,y:0});Body.setAngularVelocity(ball,0);Body.setAngle(ball,0);Body.setSleeping(ball,sleeping);state.trail.length=0}
-const wallBodies=[],decorativeBumpers=[],slopeZones=[];
-function createCoursePath(){const path=new Path2D;path.moveTo(leftBoundary[0].x,leftBoundary[0].y);for(let i=1;i<leftBoundary.length;i++)path.lineTo(leftBoundary[i].x,leftBoundary[i].y);for(let i=rightBoundary.length-1;i>=0;i--)path.lineTo(rightBoundary[i].x,rightBoundary[i].y);path.closePath();return path}
-function createWallSegment(a,b,thickness=CONFIG.wallThickness){const dx=b.x-a.x,dy=b.y-a.y,length=Math.hypot(dx,dy)+thickness*.35,body=Bodies.rectangle((a.x+b.x)/2,(a.y+b.y)/2,length,thickness,{isStatic:true,angle:Math.atan2(dy,dx),restitution:.66,friction:.025,label:"course-wall"});wallBodies.push(body);return body}
-function addBoundaryChain(points){for(let i=0;i<points.length-1;i++)createWallSegment(points[i],points[i+1]);for(const point of points)wallBodies.push(Bodies.circle(point.x,point.y,CONFIG.wallThickness/2,{isStatic:true,restitution:.66,friction:.025,label:"course-wall"}))}
-function addPolygonSlope(name,points,forceX,forceY,tint){const center=points.reduce((a,p)=>({x:a.x+p.x/points.length,y:a.y+p.y/points.length}),{x:0,y:0}),body=Bodies.fromVertices(center.x,center.y,[points],{isStatic:true,isSensor:true,label:`slope-${name}`});slopeZones.push({type:"vector",name,body,force:{x:forceX,y:forceY},tint});World.add(engine.world,body)}
-function addRadialSlope(name,x,y,radius,strength,direction,tint){const body=Bodies.circle(x,y,radius,{isStatic:true,isSensor:true,label:`slope-${name}`});slopeZones.push({type:"radial",name,body,radius,strength,direction,tint});World.add(engine.world,body)}
-function buildCourse(){coursePath=createCoursePath();addBoundaryChain(leftBoundary);addBoundaryChain(rightBoundary);createWallSegment(leftBoundary[0],rightBoundary[0],36);createWallSegment(leftBoundary.at(-1),rightBoundary.at(-1),36);for(const spec of[{x:188,y:905,r:24,kind:"stone"},{x:418,y:545,r:27,kind:"flowers"}]){const body=Bodies.circle(spec.x,spec.y,spec.r,{isStatic:true,restitution:.78,friction:.02,label:"bumper"});decorativeBumpers.push({...spec,body});World.add(engine.world,body)}addPolygonSlope("lower-rise",[{x:95,y:985},{x:470,y:975},{x:466,y:865},{x:108,y:860}],.18,-.8,"rgba(183,235,131,.13)");addRadialSlope("middle-hump",302,742,92,CONFIG.humpForce,1,"rgba(112,190,82,.15)");addPolygonSlope("right-fall",[{x:330,y:670},{x:536,y:625},{x:555,y:510},{x:320,y:550}],.58,-.56,"rgba(191,237,139,.13)");addPolygonSlope("upper-bank",[{x:112,y:432},{x:502,y:388},{x:462,y:257},{x:172,y:286}],.24,-.72,"rgba(144,211,99,.14)");addRadialSlope("cup-bowl",HOLE.x,HOLE.y,68,CONFIG.slopeForce*.58,-1,"rgba(88,163,67,.12)");holeSensor=Bodies.circle(HOLE.x,HOLE.y,25,{isStatic:true,isSensor:true,label:"hole-sensor"});ball=Bodies.circle(TEE.x,TEE.y,CONFIG.ballRadius,{restitution:CONFIG.restitution,friction:.004,frictionStatic:.015,frictionAir:CONFIG.frictionAir,density:.00125,slop:.01,label:"golf-ball"});const safety=70,outerWalls=[Bodies.rectangle(CONFIG.worldWidth/2,-safety/2,CONFIG.worldWidth+safety*2,safety,{isStatic:true,label:"safety-wall"}),Bodies.rectangle(CONFIG.worldWidth/2,CONFIG.worldHeight+safety/2,CONFIG.worldWidth+safety*2,safety,{isStatic:true,label:"safety-wall"}),Bodies.rectangle(-safety/2,CONFIG.worldHeight/2,safety,CONFIG.worldHeight+safety*2,{isStatic:true,label:"safety-wall"}),Bodies.rectangle(CONFIG.worldWidth+safety/2,CONFIG.worldHeight/2,safety,CONFIG.worldHeight+safety*2,{isStatic:true,label:"safety-wall"})];World.add(engine.world,[...wallBodies,...outerWalls,holeSensor,ball])}
+    "use strict";
+
+    // -------------------------------------------------------------------------
+    // EASY TUNING
+    // -------------------------------------------------------------------------
+    const CONFIG = Object.freeze({
+      worldWidth: 620,
+      worldHeight: 1160,
+      ballRadius: 13,
+      wallThickness: 34,
+      maxDrag: 175,
+      powerMultiplier: 0.071,
+      touchAimRadius: 60,
+      mouseAimRadius: 43,
+      maxBallSpeed: 15.5,
+      frictionAir: 0.017,
+      restitution: 0.58,
+      slopeForce: 0.000055,
+      humpForce: 0.000032,
+      lowSpeedCutoff: 0.035,
+      holeCaptureRadius: 34,
+      holeCaptureSpeed: 2.25,
+      completionsToWin: 5,
+      parPerHole: 3,
+      recoveryPenalty: 1,
+      confettiAmount: 110,
+      fixedStepMs: 1000 / 60,
+      maxFrameMs: 50
+    });
+
+    // -------------------------------------------------------------------------
+    // MATTER.JS SETUP
+    // -------------------------------------------------------------------------
+    const {
+      Engine,
+      World,
+      Bodies,
+      Body,
+      Sleeping,
+      Events,
+      Vertices,
+      Vector
+    } = Matter;
+
+    const canvas = document.getElementById("gameCanvas");
+    const ctx = canvas.getContext("2d", { alpha: false });
+
+    const holesValue = document.getElementById("holesValue");
+    const shotsValue = document.getElementById("shotsValue");
+    const totalValue = document.getElementById("totalValue");
+    const goalValue = document.getElementById("goalValue");
+    const instructions = document.getElementById("instructions");
+    const toast = document.getElementById("toast");
+    const finishModal = document.getElementById("finishModal");
+    const finalScore = document.getElementById("finalScore");
+    const resultSummary = document.getElementById("resultSummary");
+    const restartButton = document.getElementById("restartButton");
+    const helpButton = document.getElementById("helpButton");
+    const soundButton = document.getElementById("soundButton");
+    const recoverButton = document.getElementById("recoverButton");
+    const playAgainButton = document.getElementById("playAgainButton");
+
+    goalValue.textContent = CONFIG.completionsToWin;
+
+    const engine = Engine.create({ enableSleeping: true });
+    engine.gravity.x = 0;
+    engine.gravity.y = 0;
+    engine.gravity.scale = 0;
+
+    const TEE = Object.freeze({ x: 310, y: 1025 });
+    const HOLE = Object.freeze({ x: 438, y: 154 });
+
+    const leftBoundary = [
+      { x: 180, y: 1095 },
+      { x: 92, y: 1010 },
+      { x: 78, y: 885 },
+      { x: 165, y: 765 },
+      { x: 128, y: 645 },
+      { x: 54, y: 530 },
+      { x: 108, y: 397 },
+      { x: 190, y: 255 },
+      { x: 282, y: 103 }
+    ];
+
+    const rightBoundary = [
+      { x: 440, y: 1095 },
+      { x: 532, y: 1005 },
+      { x: 523, y: 870 },
+      { x: 418, y: 760 },
+      { x: 472, y: 640 },
+      { x: 566, y: 535 },
+      { x: 507, y: 395 },
+      { x: 449, y: 253 },
+      { x: 526, y: 102 }
+    ];
+
+    const state = {
+      holes: 0,
+      shots: 0,
+      totalShots: 0,
+      firstShotTaken: false,
+      aiming: false,
+      activePointerId: null,
+      dragPoint: { x: TEE.x, y: TEE.y },
+      sinking: false,
+      sinkStartedAt: 0,
+      sinkScale: 1,
+      runComplete: false,
+      audioEnabled: true,
+      collisionSoundAt: 0,
+      lastShotPosition: { x: TEE.x, y: TEE.y },
+      trail: [],
+      pendingTimers: new Set(),
+      viewport: { cssWidth: 1, cssHeight: 1, dpr: 1, scale: 1, offsetX: 0, offsetY: 0 }
+    };
+
+    let ball;
+    let holeSensor;
+    let coursePath;
+    let lastFrame = performance.now();
+    let accumulator = 0;
+    let audioContext = null;
+
+    function schedule(callback, delay) {
+      const timer = window.setTimeout(() => {
+        state.pendingTimers.delete(timer);
+        callback();
+      }, delay);
+      state.pendingTimers.add(timer);
+      return timer;
+    }
+
+    function clearScheduledActions() {
+      for (const timer of state.pendingTimers) window.clearTimeout(timer);
+      state.pendingTimers.clear();
+    }
+
+    function vibrate(pattern) {
+      if (typeof navigator.vibrate === "function") navigator.vibrate(pattern);
+    }
+
+    function setBallAt(position, sleeping = true) {
+      Body.setStatic(ball, false);
+      Body.setPosition(ball, { x: position.x, y: position.y });
+      Body.setVelocity(ball, { x: 0, y: 0 });
+      Body.setAngularVelocity(ball, 0);
+      Body.setAngle(ball, 0);
+      Sleeping.set(ball, sleeping);
+      state.trail.length = 0;
+    }
+
+    const wallBodies = [];
+    const decorativeBumpers = [];
+    const slopeZones = [];
+
+    // -------------------------------------------------------------------------
+    // COURSE AND PHYSICS BODIES
+    // -------------------------------------------------------------------------
+    function createCoursePath() {
+      const path = new Path2D();
+      path.moveTo(leftBoundary[0].x, leftBoundary[0].y);
+      for (let i = 1; i < leftBoundary.length; i++) {
+        path.lineTo(leftBoundary[i].x, leftBoundary[i].y);
+      }
+      for (let i = rightBoundary.length - 1; i >= 0; i--) {
+        path.lineTo(rightBoundary[i].x, rightBoundary[i].y);
+      }
+      path.closePath();
+      return path;
+    }
+
+    function createWallSegment(a, b, thickness = CONFIG.wallThickness) {
+      const dx = b.x - a.x;
+      const dy = b.y - a.y;
+      const length = Math.hypot(dx, dy) + thickness * 0.35;
+      const body = Bodies.rectangle(
+        (a.x + b.x) / 2,
+        (a.y + b.y) / 2,
+        length,
+        thickness,
+        {
+          isStatic: true,
+          angle: Math.atan2(dy, dx),
+          restitution: 0.66,
+          friction: 0.025,
+          label: "course-wall"
+        }
+      );
+      wallBodies.push(body);
+      return body;
+    }
+
+    function addBoundaryChain(points) {
+      for (let i = 0; i < points.length - 1; i++) {
+        createWallSegment(points[i], points[i + 1]);
+      }
+      for (const point of points) {
+        wallBodies.push(Bodies.circle(point.x, point.y, CONFIG.wallThickness / 2, {
+          isStatic: true,
+          restitution: 0.66,
+          friction: 0.025,
+          label: "course-wall"
+        }));
+      }
+    }
+
+    function addPolygonSlope(name, points, forceX, forceY, tint) {
+      const center = points.reduce((acc, p) => ({ x: acc.x + p.x / points.length, y: acc.y + p.y / points.length }), { x: 0, y: 0 });
+      const body = Bodies.fromVertices(center.x, center.y, [points], {
+        isStatic: true,
+        isSensor: true,
+        label: `slope-${name}`
+      });
+      slopeZones.push({ type: "vector", name, body, force: { x: forceX, y: forceY }, tint });
+      World.add(engine.world, body);
+    }
+
+    function addRadialSlope(name, x, y, radius, strength, direction, tint) {
+      const body = Bodies.circle(x, y, radius, {
+        isStatic: true,
+        isSensor: true,
+        label: `slope-${name}`
+      });
+      slopeZones.push({ type: "radial", name, body, radius, strength, direction, tint });
+      World.add(engine.world, body);
+    }
+
+    function buildCourse() {
+      coursePath = createCoursePath();
+
+      addBoundaryChain(leftBoundary);
+      addBoundaryChain(rightBoundary);
+      createWallSegment(leftBoundary[0], rightBoundary[0], 36);
+      createWallSegment(leftBoundary[leftBoundary.length - 1], rightBoundary[rightBoundary.length - 1], 36);
+
+      const bumperSpecs = [
+        { x: 188, y: 905, r: 24, kind: "stone" },
+        { x: 418, y: 545, r: 27, kind: "flowers" }
+      ];
+
+      for (const spec of bumperSpecs) {
+        const body = Bodies.circle(spec.x, spec.y, spec.r, {
+          isStatic: true,
+          restitution: 0.78,
+          friction: 0.02,
+          label: "bumper"
+        });
+        decorativeBumpers.push({ ...spec, body });
+        World.add(engine.world, body);
+      }
+
+      addPolygonSlope("lower-rise", [
+        { x: 95, y: 985 }, { x: 470, y: 975 }, { x: 466, y: 865 }, { x: 108, y: 860 }
+      ], 0.18, -0.80, "rgba(183, 235, 131, 0.13)");
+
+      addRadialSlope("middle-hump", 302, 742, 92, CONFIG.humpForce, 1, "rgba(112, 190, 82, 0.15)");
+
+      addPolygonSlope("right-fall", [
+        { x: 330, y: 670 }, { x: 536, y: 625 }, { x: 555, y: 510 }, { x: 320, y: 550 }
+      ], 0.58, -0.56, "rgba(191, 237, 139, 0.13)");
+
+      addPolygonSlope("upper-bank", [
+        { x: 112, y: 432 }, { x: 502, y: 388 }, { x: 462, y: 257 }, { x: 172, y: 286 }
+      ], 0.24, -0.72, "rgba(144, 211, 99, 0.14)");
+
+      addRadialSlope("cup-bowl", HOLE.x, HOLE.y, 68, CONFIG.slopeForce * 0.58, -1, "rgba(88, 163, 67, 0.12)");
+
+      holeSensor = Bodies.circle(HOLE.x, HOLE.y, 25, {
+        isStatic: true,
+        isSensor: true,
+        label: "hole-sensor"
+      });
+
+      ball = Bodies.circle(TEE.x, TEE.y, CONFIG.ballRadius, {
+        restitution: CONFIG.restitution,
+        friction: 0.004,
+        frictionStatic: 0.015,
+        frictionAir: CONFIG.frictionAir,
+        density: 0.00125,
+        slop: 0.01,
+        label: "golf-ball"
+      });
+
+      const safety = 70;
+      const outerWalls = [
+        Bodies.rectangle(CONFIG.worldWidth / 2, -safety / 2, CONFIG.worldWidth + safety * 2, safety, { isStatic: true, label: "safety-wall" }),
+        Bodies.rectangle(CONFIG.worldWidth / 2, CONFIG.worldHeight + safety / 2, CONFIG.worldWidth + safety * 2, safety, { isStatic: true, label: "safety-wall" }),
+        Bodies.rectangle(-safety / 2, CONFIG.worldHeight / 2, safety, CONFIG.worldHeight + safety * 2, { isStatic: true, label: "safety-wall" }),
+        Bodies.rectangle(CONFIG.worldWidth + safety / 2, CONFIG.worldHeight / 2, safety, CONFIG.worldHeight + safety * 2, { isStatic: true, label: "safety-wall" })
+      ];
+
+      World.add(engine.world, [...wallBodies, ...outerWalls, holeSensor, ball]);
+    }
