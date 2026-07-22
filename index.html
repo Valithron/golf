@@ -10,6 +10,75 @@
   <script src="https://cdn.jsdelivr.net/npm/matter-js@0.20.0/build/matter.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.9.4/dist/confetti.browser.min.js"></script>
   <link rel="stylesheet" href="styles.css" />
+  <style>
+    #finishModal {
+      overflow-y: auto;
+      padding-top: max(18px, env(safe-area-inset-top));
+      padding-bottom: max(18px, env(safe-area-inset-bottom));
+    }
+
+    #finishModal .congrats-card {
+      width: min(92vw, 520px);
+      padding: 0;
+      border: 0;
+      background: transparent;
+      box-shadow: none;
+      overflow: visible;
+    }
+
+    .congrats-art {
+      position: relative;
+      z-index: 2;
+      display: block;
+      width: min(100%, 460px);
+      max-height: min(50dvh, 480px);
+      margin: 0 auto -14px;
+      object-fit: contain;
+      filter: drop-shadow(0 20px 28px rgba(0, 0, 0, 0.38));
+      transform-origin: 50% 100%;
+    }
+
+    .congrats-copy {
+      position: relative;
+      z-index: 1;
+      padding: 24px 26px 28px;
+      border: 1px solid rgba(255, 255, 255, 0.2);
+      border-radius: 26px;
+      background: linear-gradient(155deg, rgba(30, 106, 82, 0.98), rgba(12, 53, 43, 0.98));
+      box-shadow: 0 28px 80px rgba(0, 0, 0, 0.38), inset 0 1px rgba(255, 255, 255, 0.08);
+    }
+
+    #finishModal.show .congrats-art {
+      animation: congrats-pop 560ms cubic-bezier(.18, .88, .28, 1.18) both;
+    }
+
+    @keyframes congrats-pop {
+      0% { opacity: 0; transform: translateY(24px) scale(0.78) rotate(-2deg); }
+      70% { opacity: 1; transform: translateY(-5px) scale(1.04) rotate(1deg); }
+      100% { opacity: 1; transform: translateY(0) scale(1) rotate(0); }
+    }
+
+    @media (max-width: 520px) {
+      .congrats-art {
+        max-height: 43dvh;
+        margin-bottom: -10px;
+      }
+
+      .congrats-copy {
+        padding: 20px 20px 24px;
+        border-radius: 22px;
+      }
+
+      .congrats-copy h1 {
+        font-size: clamp(30px, 10vw, 42px);
+      }
+
+      .congrats-copy p {
+        margin: 12px 0 18px;
+        font-size: 15px;
+      }
+    }
+  </style>
 </head>
 <body>
   <main id="app" aria-label="Meadow Putt mini-golf game">
@@ -47,11 +116,14 @@
     <div id="toast" role="status" aria-live="polite">Nice!</div>
 
     <section class="modal" id="finishModal" role="dialog" aria-modal="true" aria-labelledby="finishTitle">
-      <div class="modal-card">
-        <p class="modal-kicker">Course complete</p>
-        <h1 id="finishTitle">You did it!</h1>
-        <p id="resultSummary">You finished five holes in <strong id="finalScore">0</strong> total shots.</p>
-        <button class="primary-button" id="playAgainButton" type="button">Play again</button>
+      <div class="modal-card congrats-card">
+        <img class="congrats-art" src="golf-congrats.png" alt="A golfer celebrating completion of the course" />
+        <div class="congrats-copy">
+          <p class="modal-kicker">All five holes complete</p>
+          <h1 id="finishTitle">Congratulations!</h1>
+          <p id="resultSummary">You completed the course in <strong id="finalScore">0</strong> total shots.</p>
+          <button class="primary-button" id="playAgainButton" type="button">Play again</button>
+        </div>
       </div>
     </section>
   </main>
