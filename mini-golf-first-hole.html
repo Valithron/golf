@@ -1,0 +1,1372 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no" />
+  <meta name="theme-color" content="#123f35" />
+  <title>Meadow Putt</title>
+
+  <!-- Pinned CDN builds for a stable single-file prototype. -->
+  <script src="https://cdn.jsdelivr.net/npm/matter-js@0.20.0/build/matter.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.9.4/dist/confetti.browser.min.js"></script>
+
+  <style>
+    :root {
+      color-scheme: dark;
+      --panel: rgba(13, 47, 39, 0.88);
+      --panel-border: rgba(255, 255, 255, 0.14);
+      --text: #f7fff8;
+      --muted: #c7ddcf;
+      --accent: #ffd45b;
+      --red: #ef4b4b;
+    }
+
+    * { box-sizing: border-box; }
+
+    html,
+    body {
+      width: 100%;
+      height: 100%;
+      margin: 0;
+      overflow: hidden;
+      overscroll-behavior: none;
+      background: #123f35;
+      font-family: ui-rounded, "SF Pro Rounded", "Nunito", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      -webkit-tap-highlight-color: transparent;
+      user-select: none;
+    }
+
+    button { font: inherit; }
+
+    #app {
+      position: fixed;
+      inset: 0;
+      overflow: hidden;
+      background:
+        radial-gradient(circle at 18% 12%, rgba(255,255,255,0.10), transparent 28%),
+        linear-gradient(180deg, #1d6d58 0%, #123f35 100%);
+    }
+
+    #gameCanvas {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      display: block;
+      touch-action: none;
+      cursor: crosshair;
+    }
+
+    .hud {
+      position: absolute;
+      z-index: 5;
+      top: max(12px, env(safe-area-inset-top));
+      left: 50%;
+      width: min(94vw, 610px);
+      transform: translateX(-50%);
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 10px;
+      pointer-events: none;
+    }
+
+    .score-card,
+    .hud-actions {
+      min-height: 54px;
+      border: 1px solid var(--panel-border);
+      border-radius: 18px;
+      background: var(--panel);
+      box-shadow: 0 12px 36px rgba(2, 20, 15, 0.24), inset 0 1px rgba(255,255,255,0.07);
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+    }
+
+    .score-card {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      align-items: center;
+      padding: 7px 12px;
+    }
+
+    .stat {
+      min-width: 0;
+      text-align: center;
+      border-right: 1px solid rgba(255,255,255,0.11);
+    }
+
+    .stat:last-child { border-right: 0; }
+
+    .stat-label {
+      display: block;
+      color: var(--muted);
+      font-size: 10px;
+      font-weight: 800;
+      letter-spacing: 0.11em;
+      text-transform: uppercase;
+    }
+
+    .stat-value {
+      display: block;
+      margin-top: 1px;
+      color: var(--text);
+      font-size: clamp(17px, 4.2vw, 23px);
+      font-weight: 900;
+      line-height: 1.1;
+      white-space: nowrap;
+    }
+
+    .hud-actions {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      padding: 6px;
+      pointer-events: auto;
+    }
+
+    .icon-button {
+      width: 42px;
+      height: 42px;
+      border: 0;
+      border-radius: 13px;
+      color: var(--text);
+      background: rgba(255,255,255,0.09);
+      box-shadow: inset 0 1px rgba(255,255,255,0.08);
+      font-weight: 900;
+      cursor: pointer;
+      transition: transform 120ms ease, background 120ms ease;
+    }
+
+    .icon-button:hover { background: rgba(255,255,255,0.15); }
+    .icon-button:active { transform: scale(0.94); }
+    .icon-button:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+
+    #instructions {
+      position: absolute;
+      z-index: 6;
+      left: 50%;
+      bottom: max(18px, env(safe-area-inset-bottom));
+      width: min(88vw, 430px);
+      transform: translateX(-50%);
+      padding: 14px 18px;
+      border: 1px solid rgba(255,255,255,0.16);
+      border-radius: 20px;
+      color: var(--text);
+      background: rgba(9, 36, 30, 0.90);
+      box-shadow: 0 18px 45px rgba(0,0,0,0.26);
+      text-align: center;
+      pointer-events: none;
+      transition: opacity 350ms ease, transform 350ms ease;
+    }
+
+    #instructions.hidden {
+      opacity: 0;
+      transform: translate(-50%, 12px);
+    }
+
+    #instructions strong {
+      display: block;
+      margin-bottom: 3px;
+      font-size: 16px;
+    }
+
+    #instructions span {
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.35;
+    }
+
+    #toast {
+      position: absolute;
+      z-index: 9;
+      top: 28%;
+      left: 50%;
+      transform: translate(-50%, -10px) scale(0.88);
+      padding: 10px 20px;
+      border-radius: 999px;
+      color: #14372d;
+      background: #fff4a9;
+      box-shadow: 0 12px 35px rgba(0,0,0,0.28);
+      font-size: clamp(26px, 8vw, 46px);
+      font-weight: 1000;
+      letter-spacing: -0.03em;
+      opacity: 0;
+      pointer-events: none;
+    }
+
+    #toast.show { animation: toast-pop 1.05s cubic-bezier(.2,.8,.2,1) both; }
+
+    @keyframes toast-pop {
+      0% { opacity: 0; transform: translate(-50%, 8px) scale(.65) rotate(-4deg); }
+      22% { opacity: 1; transform: translate(-50%, -8px) scale(1.08) rotate(2deg); }
+      66% { opacity: 1; transform: translate(-50%, -12px) scale(1); }
+      100% { opacity: 0; transform: translate(-50%, -30px) scale(.94); }
+    }
+
+    .modal {
+      position: absolute;
+      z-index: 20;
+      inset: 0;
+      display: grid;
+      place-items: center;
+      padding: 22px;
+      background: rgba(4, 24, 20, 0.64);
+      backdrop-filter: blur(10px);
+      -webkit-backdrop-filter: blur(10px);
+      opacity: 0;
+      visibility: hidden;
+      transition: opacity 220ms ease, visibility 220ms ease;
+    }
+
+    .modal.show { opacity: 1; visibility: visible; }
+
+    .modal-card {
+      width: min(92vw, 430px);
+      padding: 26px;
+      border: 1px solid rgba(255,255,255,0.18);
+      border-radius: 28px;
+      color: var(--text);
+      background: linear-gradient(155deg, rgba(30,106,82,0.98), rgba(12,53,43,0.98));
+      box-shadow: 0 28px 80px rgba(0,0,0,.38);
+      text-align: center;
+    }
+
+    .modal-kicker {
+      margin: 0 0 8px;
+      color: #f6d968;
+      font-size: 12px;
+      font-weight: 900;
+      letter-spacing: .16em;
+      text-transform: uppercase;
+    }
+
+    .modal h1 {
+      margin: 0;
+      font-size: clamp(30px, 9vw, 48px);
+      line-height: .98;
+      letter-spacing: -.045em;
+    }
+
+    .modal p {
+      margin: 14px 0 22px;
+      color: var(--muted);
+      font-size: 16px;
+      line-height: 1.5;
+    }
+
+    .primary-button {
+      width: 100%;
+      border: 0;
+      border-radius: 16px;
+      padding: 14px 18px;
+      color: #17382f;
+      background: linear-gradient(180deg, #ffe677, #f6c94e);
+      box-shadow: 0 8px 0 #c9962c, 0 14px 28px rgba(0,0,0,.23);
+      font-weight: 1000;
+      cursor: pointer;
+    }
+
+    .primary-button:active { transform: translateY(4px); box-shadow: 0 4px 0 #c9962c, 0 8px 18px rgba(0,0,0,.20); }
+
+    @media (max-width: 520px) {
+      .hud { grid-template-columns: 1fr; }
+      .hud-actions {
+        position: absolute;
+        top: 64px;
+        right: 0;
+        width: max-content;
+        min-height: 0;
+      }
+      .score-card { min-height: 52px; }
+      .icon-button { width: 40px; height: 40px; }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after { animation-duration: 0.001ms !important; transition-duration: 0.001ms !important; }
+    }
+  </style>
+</head>
+<body>
+  <main id="app" aria-label="Meadow Putt mini-golf game">
+    <canvas id="gameCanvas" aria-label="Mini-golf course"></canvas>
+
+    <section class="hud" aria-label="Game score">
+      <div class="score-card">
+        <div class="stat">
+          <span class="stat-label">Holes</span>
+          <span class="stat-value"><span id="holesValue">0</span>/<span id="goalValue">5</span></span>
+        </div>
+        <div class="stat">
+          <span class="stat-label">This hole</span>
+          <span class="stat-value" id="shotsValue">0</span>
+        </div>
+        <div class="stat">
+          <span class="stat-label">Total</span>
+          <span class="stat-value" id="totalValue">0</span>
+        </div>
+      </div>
+
+      <div class="hud-actions">
+        <button class="icon-button" id="helpButton" type="button" aria-label="Show instructions">?</button>
+        <button class="icon-button" id="soundButton" type="button" aria-label="Toggle sound">♪</button>
+        <button class="icon-button" id="restartButton" type="button" aria-label="Restart course">↻</button>
+      </div>
+    </section>
+
+    <aside id="instructions">
+      <strong>Pull back, then release</strong>
+      <span>Start on the ball. Drag opposite the direction you want to shoot. Longer means stronger.</span>
+    </aside>
+
+    <div id="toast" role="status" aria-live="polite">Nice!</div>
+
+    <section class="modal" id="finishModal" role="dialog" aria-modal="true" aria-labelledby="finishTitle">
+      <div class="modal-card">
+        <p class="modal-kicker">Course complete</p>
+        <h1 id="finishTitle">You did it!</h1>
+        <p>You finished five holes in <strong id="finalScore">0</strong> total shots.</p>
+        <button class="primary-button" id="playAgainButton" type="button">Play again</button>
+      </div>
+    </section>
+  </main>
+
+  <script>
+    "use strict";
+
+    // -------------------------------------------------------------------------
+    // EASY TUNING
+    // -------------------------------------------------------------------------
+    const CONFIG = Object.freeze({
+      worldWidth: 620,
+      worldHeight: 1160,
+      ballRadius: 13,
+      wallThickness: 34,
+      maxDrag: 175,
+      powerMultiplier: 0.071,
+      maxBallSpeed: 15.5,
+      frictionAir: 0.017,
+      restitution: 0.58,
+      slopeForce: 0.000055,
+      humpForce: 0.000032,
+      lowSpeedCutoff: 0.035,
+      holeCaptureRadius: 34,
+      holeCaptureSpeed: 2.25,
+      completionsToWin: 5,
+      confettiAmount: 110,
+      fixedStepMs: 1000 / 60,
+      maxFrameMs: 50
+    });
+
+    // -------------------------------------------------------------------------
+    // MATTER.JS SETUP
+    // -------------------------------------------------------------------------
+    const {
+      Engine,
+      World,
+      Bodies,
+      Body,
+      Events,
+      Vertices,
+      Vector
+    } = Matter;
+
+    const canvas = document.getElementById("gameCanvas");
+    const ctx = canvas.getContext("2d", { alpha: false });
+
+    const holesValue = document.getElementById("holesValue");
+    const shotsValue = document.getElementById("shotsValue");
+    const totalValue = document.getElementById("totalValue");
+    const goalValue = document.getElementById("goalValue");
+    const instructions = document.getElementById("instructions");
+    const toast = document.getElementById("toast");
+    const finishModal = document.getElementById("finishModal");
+    const finalScore = document.getElementById("finalScore");
+    const restartButton = document.getElementById("restartButton");
+    const helpButton = document.getElementById("helpButton");
+    const soundButton = document.getElementById("soundButton");
+    const playAgainButton = document.getElementById("playAgainButton");
+
+    goalValue.textContent = CONFIG.completionsToWin;
+
+    const engine = Engine.create({ enableSleeping: true });
+    engine.gravity.x = 0;
+    engine.gravity.y = 0;
+    engine.gravity.scale = 0;
+
+    const TEE = Object.freeze({ x: 310, y: 1025 });
+    const HOLE = Object.freeze({ x: 438, y: 154 });
+
+    const leftBoundary = [
+      { x: 180, y: 1095 },
+      { x: 92, y: 1010 },
+      { x: 78, y: 885 },
+      { x: 165, y: 765 },
+      { x: 128, y: 645 },
+      { x: 54, y: 530 },
+      { x: 108, y: 397 },
+      { x: 190, y: 255 },
+      { x: 282, y: 103 }
+    ];
+
+    const rightBoundary = [
+      { x: 440, y: 1095 },
+      { x: 532, y: 1005 },
+      { x: 523, y: 870 },
+      { x: 418, y: 760 },
+      { x: 472, y: 640 },
+      { x: 566, y: 535 },
+      { x: 507, y: 395 },
+      { x: 449, y: 253 },
+      { x: 526, y: 102 }
+    ];
+
+    const state = {
+      holes: 0,
+      shots: 0,
+      totalShots: 0,
+      firstShotTaken: false,
+      aiming: false,
+      activePointerId: null,
+      dragPoint: { x: TEE.x, y: TEE.y },
+      sinking: false,
+      sinkStartedAt: 0,
+      sinkScale: 1,
+      runComplete: false,
+      audioEnabled: true,
+      collisionSoundAt: 0,
+      pendingTimers: new Set(),
+      viewport: { cssWidth: 1, cssHeight: 1, dpr: 1, scale: 1, offsetX: 0, offsetY: 0 }
+    };
+
+    let ball;
+    let holeSensor;
+    let coursePath;
+    let lastFrame = performance.now();
+    let accumulator = 0;
+    let audioContext = null;
+
+    function schedule(callback, delay) {
+      const timer = window.setTimeout(() => {
+        state.pendingTimers.delete(timer);
+        callback();
+      }, delay);
+      state.pendingTimers.add(timer);
+      return timer;
+    }
+
+    function clearScheduledActions() {
+      for (const timer of state.pendingTimers) window.clearTimeout(timer);
+      state.pendingTimers.clear();
+    }
+
+    const wallBodies = [];
+    const decorativeBumpers = [];
+    const slopeZones = [];
+
+    // -------------------------------------------------------------------------
+    // COURSE AND PHYSICS BODIES
+    // -------------------------------------------------------------------------
+    function createCoursePath() {
+      const path = new Path2D();
+      path.moveTo(leftBoundary[0].x, leftBoundary[0].y);
+      for (let i = 1; i < leftBoundary.length; i++) {
+        path.lineTo(leftBoundary[i].x, leftBoundary[i].y);
+      }
+      for (let i = rightBoundary.length - 1; i >= 0; i--) {
+        path.lineTo(rightBoundary[i].x, rightBoundary[i].y);
+      }
+      path.closePath();
+      return path;
+    }
+
+    function createWallSegment(a, b, thickness = CONFIG.wallThickness) {
+      const dx = b.x - a.x;
+      const dy = b.y - a.y;
+      const length = Math.hypot(dx, dy) + thickness * 0.35;
+      const body = Bodies.rectangle(
+        (a.x + b.x) / 2,
+        (a.y + b.y) / 2,
+        length,
+        thickness,
+        {
+          isStatic: true,
+          angle: Math.atan2(dy, dx),
+          restitution: 0.66,
+          friction: 0.025,
+          label: "course-wall"
+        }
+      );
+      wallBodies.push(body);
+      return body;
+    }
+
+    function addBoundaryChain(points) {
+      for (let i = 0; i < points.length - 1; i++) {
+        createWallSegment(points[i], points[i + 1]);
+      }
+      for (const point of points) {
+        wallBodies.push(Bodies.circle(point.x, point.y, CONFIG.wallThickness / 2, {
+          isStatic: true,
+          restitution: 0.66,
+          friction: 0.025,
+          label: "course-wall"
+        }));
+      }
+    }
+
+    function addPolygonSlope(name, points, forceX, forceY, tint) {
+      const center = points.reduce((acc, p) => ({ x: acc.x + p.x / points.length, y: acc.y + p.y / points.length }), { x: 0, y: 0 });
+      const body = Bodies.fromVertices(center.x, center.y, [points], {
+        isStatic: true,
+        isSensor: true,
+        label: `slope-${name}`
+      });
+      slopeZones.push({ type: "vector", name, body, force: { x: forceX, y: forceY }, tint });
+      World.add(engine.world, body);
+    }
+
+    function addRadialSlope(name, x, y, radius, strength, direction, tint) {
+      const body = Bodies.circle(x, y, radius, {
+        isStatic: true,
+        isSensor: true,
+        label: `slope-${name}`
+      });
+      slopeZones.push({ type: "radial", name, body, radius, strength, direction, tint });
+      World.add(engine.world, body);
+    }
+
+    function buildCourse() {
+      coursePath = createCoursePath();
+
+      addBoundaryChain(leftBoundary);
+      addBoundaryChain(rightBoundary);
+      createWallSegment(leftBoundary[0], rightBoundary[0], 36);
+      createWallSegment(leftBoundary[leftBoundary.length - 1], rightBoundary[rightBoundary.length - 1], 36);
+
+      // Decorative obstacles add a little course character without making the hole cruel.
+      const bumperSpecs = [
+        { x: 188, y: 905, r: 24, kind: "stone" },
+        { x: 418, y: 545, r: 27, kind: "flowers" }
+      ];
+
+      for (const spec of bumperSpecs) {
+        const body = Bodies.circle(spec.x, spec.y, spec.r, {
+          isStatic: true,
+          restitution: 0.78,
+          friction: 0.02,
+          label: "bumper"
+        });
+        decorativeBumpers.push({ ...spec, body });
+        World.add(engine.world, body);
+      }
+
+      // Directional slopes are static sensor polygons. They do not collide with the ball;
+      // they apply a small force while the ball is inside them.
+      addPolygonSlope("lower-rise", [
+        { x: 95, y: 985 }, { x: 470, y: 975 }, { x: 466, y: 865 }, { x: 108, y: 860 }
+      ], 0.18, -0.80, "rgba(183, 235, 131, 0.13)");
+
+      addRadialSlope("middle-hump", 302, 742, 92, CONFIG.humpForce, 1, "rgba(112, 190, 82, 0.15)");
+
+      addPolygonSlope("right-fall", [
+        { x: 330, y: 670 }, { x: 536, y: 625 }, { x: 555, y: 510 }, { x: 320, y: 550 }
+      ], 0.58, -0.56, "rgba(191, 237, 139, 0.13)");
+
+      addPolygonSlope("upper-bank", [
+        { x: 112, y: 432 }, { x: 502, y: 388 }, { x: 462, y: 257 }, { x: 172, y: 286 }
+      ], 0.24, -0.72, "rgba(144, 211, 99, 0.14)");
+
+      // A very gentle bowl around the cup helps slow balls settle naturally.
+      addRadialSlope("cup-bowl", HOLE.x, HOLE.y, 68, CONFIG.slopeForce * 0.58, -1, "rgba(88, 163, 67, 0.12)");
+
+      holeSensor = Bodies.circle(HOLE.x, HOLE.y, 25, {
+        isStatic: true,
+        isSensor: true,
+        label: "hole-sensor"
+      });
+
+      ball = Bodies.circle(TEE.x, TEE.y, CONFIG.ballRadius, {
+        restitution: CONFIG.restitution,
+        friction: 0.004,
+        frictionStatic: 0.015,
+        frictionAir: CONFIG.frictionAir,
+        density: 0.00125,
+        slop: 0.01,
+        label: "golf-ball"
+      });
+
+      // Invisible world walls are a final safety net against tunneling or resize quirks.
+      const safety = 70;
+      const outerWalls = [
+        Bodies.rectangle(CONFIG.worldWidth / 2, -safety / 2, CONFIG.worldWidth + safety * 2, safety, { isStatic: true, label: "safety-wall" }),
+        Bodies.rectangle(CONFIG.worldWidth / 2, CONFIG.worldHeight + safety / 2, CONFIG.worldWidth + safety * 2, safety, { isStatic: true, label: "safety-wall" }),
+        Bodies.rectangle(-safety / 2, CONFIG.worldHeight / 2, safety, CONFIG.worldHeight + safety * 2, { isStatic: true, label: "safety-wall" }),
+        Bodies.rectangle(CONFIG.worldWidth + safety / 2, CONFIG.worldHeight / 2, safety, CONFIG.worldHeight + safety * 2, { isStatic: true, label: "safety-wall" })
+      ];
+
+      World.add(engine.world, [...wallBodies, ...outerWalls, holeSensor, ball]);
+    }
+
+    // -------------------------------------------------------------------------
+    // INPUT
+    // -------------------------------------------------------------------------
+    function screenToWorld(clientX, clientY) {
+      const rect = canvas.getBoundingClientRect();
+      const x = (clientX - rect.left - state.viewport.offsetX) / state.viewport.scale;
+      const y = (clientY - rect.top - state.viewport.offsetY) / state.viewport.scale;
+      return { x, y };
+    }
+
+    function canAim() {
+      return !state.sinking && !state.runComplete && ball.speed < 0.28;
+    }
+
+    function beginAim(event) {
+      event.preventDefault();
+      ensureAudio();
+
+      if (!canAim()) return;
+      const point = screenToWorld(event.clientX, event.clientY);
+      if (Vector.magnitude(Vector.sub(point, ball.position)) > CONFIG.ballRadius + 30) return;
+
+      state.aiming = true;
+      state.activePointerId = event.pointerId;
+      state.dragPoint = point;
+      canvas.setPointerCapture?.(event.pointerId);
+      playTone(420, 0.035, "sine", 0.035);
+    }
+
+    function updateAim(event) {
+      if (!state.aiming || event.pointerId !== state.activePointerId) return;
+      event.preventDefault();
+      state.dragPoint = screenToWorld(event.clientX, event.clientY);
+    }
+
+    function endAim(event) {
+      if (!state.aiming || event.pointerId !== state.activePointerId) return;
+      event.preventDefault();
+
+      const raw = Vector.sub(ball.position, state.dragPoint);
+      const distance = Math.min(Vector.magnitude(raw), CONFIG.maxDrag);
+      const direction = distance > 0 ? Vector.normalise(raw) : { x: 0, y: 0 };
+
+      state.aiming = false;
+      state.activePointerId = null;
+      canvas.releasePointerCapture?.(event.pointerId);
+
+      if (distance < 9) return;
+
+      const launchSpeed = Math.min(distance * CONFIG.powerMultiplier, CONFIG.maxBallSpeed);
+      Body.setVelocity(ball, Vector.mult(direction, launchSpeed));
+      Body.setAngularVelocity(ball, launchSpeed * 0.025);
+      Body.setSleeping(ball, false);
+
+      state.shots += 1;
+      state.totalShots += 1;
+      state.firstShotTaken = true;
+      updateHud();
+      instructions.classList.add("hidden");
+      playWhoosh(launchSpeed / CONFIG.maxBallSpeed);
+    }
+
+    function cancelAim(event) {
+      if (event.pointerId !== state.activePointerId) return;
+      state.aiming = false;
+      state.activePointerId = null;
+    }
+
+    canvas.addEventListener("pointerdown", beginAim, { passive: false });
+    canvas.addEventListener("pointermove", updateAim, { passive: false });
+    canvas.addEventListener("pointerup", endAim, { passive: false });
+    canvas.addEventListener("pointercancel", cancelAim, { passive: false });
+    canvas.addEventListener("contextmenu", event => event.preventDefault());
+
+    // -------------------------------------------------------------------------
+    // GAMEPLAY PHYSICS
+    // -------------------------------------------------------------------------
+    function isInsideSlope(zone, position) {
+      if (zone.type === "radial") {
+        return Vector.magnitudeSquared(Vector.sub(position, zone.body.position)) <= zone.radius * zone.radius;
+      }
+      return Vertices.contains(zone.body.vertices, position);
+    }
+
+    function applySlopeForces() {
+      if (state.sinking) return;
+
+      let onSlope = false;
+      for (const zone of slopeZones) {
+        if (!isInsideSlope(zone, ball.position)) continue;
+        onSlope = true;
+        Body.setSleeping(ball, false);
+
+        if (zone.type === "vector") {
+          Body.applyForce(ball, ball.position, {
+            x: zone.force.x * CONFIG.slopeForce,
+            y: zone.force.y * CONFIG.slopeForce
+          });
+        } else {
+          const fromCenter = Vector.sub(ball.position, zone.body.position);
+          const distance = Math.max(8, Vector.magnitude(fromCenter));
+          const falloff = 1 - Math.min(distance / zone.radius, 1);
+          const direction = Vector.mult(Vector.normalise(fromCenter), zone.direction);
+          Body.applyForce(ball, ball.position, Vector.mult(direction, zone.strength * (0.30 + falloff * 0.70)));
+        }
+      }
+
+      // Settle tiny residual movement once the ball reaches genuinely flat ground.
+      if (!onSlope && ball.speed > 0 && ball.speed < CONFIG.lowSpeedCutoff) {
+        Body.setVelocity(ball, { x: 0, y: 0 });
+        Body.setAngularVelocity(ball, 0);
+        Body.setSleeping(ball, true);
+      }
+
+      if (ball.speed > CONFIG.maxBallSpeed) {
+        Body.setVelocity(ball, Vector.mult(Vector.normalise(ball.velocity), CONFIG.maxBallSpeed));
+      }
+    }
+
+    function applyCupPhysics(now) {
+      if (state.sinking) {
+        const elapsed = now - state.sinkStartedAt;
+        const t = Math.min(elapsed / 620, 1);
+        state.sinkScale = 1 - (1 - Math.pow(1 - t, 3)) * 0.96;
+        return;
+      }
+
+      const toCup = Vector.sub({ x: HOLE.x, y: HOLE.y }, ball.position);
+      const distance = Vector.magnitude(toCup);
+
+      if (distance < CONFIG.holeCaptureRadius + 18 && ball.speed < CONFIG.holeCaptureSpeed + 0.8) {
+        const pull = Math.max(0, 1 - distance / (CONFIG.holeCaptureRadius + 18));
+        Body.applyForce(ball, ball.position, Vector.mult(Vector.normalise(toCup), 0.00006 * pull));
+        Body.setVelocity(ball, Vector.mult(ball.velocity, 0.988));
+      }
+
+      if (distance < CONFIG.holeCaptureRadius && ball.speed < CONFIG.holeCaptureSpeed) {
+        startSink();
+      }
+    }
+
+    function startSink() {
+      if (state.sinking) return;
+      state.sinking = true;
+      state.aiming = false;
+      state.sinkStartedAt = performance.now();
+      state.sinkScale = 1;
+
+      Body.setPosition(ball, { x: HOLE.x, y: HOLE.y });
+      Body.setVelocity(ball, { x: 0, y: 0 });
+      Body.setAngularVelocity(ball, 0);
+      Body.setStatic(ball, true);
+      playHoleSound();
+
+      schedule(completeHole, 650);
+    }
+
+    function completeHole() {
+      state.holes += 1;
+      updateHud();
+      showToast(state.shots === 1 ? "Hole in one!" : state.shots <= 3 ? "Nice!" : "In the cup!");
+      celebrate(false);
+
+      if (state.holes >= CONFIG.completionsToWin) {
+        state.runComplete = true;
+        schedule(showFinish, 800);
+      } else {
+        schedule(resetBallForNextHole, 1350);
+      }
+    }
+
+    function resetBallForNextHole() {
+      Body.setStatic(ball, false);
+      Body.setPosition(ball, TEE);
+      Body.setVelocity(ball, { x: 0, y: 0 });
+      Body.setAngularVelocity(ball, 0);
+      Body.setAngle(ball, 0);
+      Body.setSleeping(ball, true);
+
+      state.shots = 0;
+      state.sinking = false;
+      state.sinkScale = 1;
+      updateHud();
+    }
+
+    function restartCourse() {
+      clearScheduledActions();
+      finishModal.classList.remove("show");
+      state.holes = 0;
+      state.shots = 0;
+      state.totalShots = 0;
+      state.runComplete = false;
+      state.sinking = false;
+      state.sinkScale = 1;
+      state.aiming = false;
+
+      Body.setStatic(ball, false);
+      Body.setPosition(ball, TEE);
+      Body.setVelocity(ball, { x: 0, y: 0 });
+      Body.setAngularVelocity(ball, 0);
+      Body.setAngle(ball, 0);
+      Body.setSleeping(ball, true);
+
+      updateHud();
+      instructions.classList.toggle("hidden", state.firstShotTaken);
+      playTone(520, 0.06, "triangle", 0.035);
+    }
+
+    // -------------------------------------------------------------------------
+    // SOUND
+    // -------------------------------------------------------------------------
+    function ensureAudio() {
+      if (!state.audioEnabled) return null;
+      if (!audioContext) {
+        const AudioCtx = window.AudioContext || window.webkitAudioContext;
+        if (!AudioCtx) return null;
+        audioContext = new AudioCtx();
+      }
+      if (audioContext.state === "suspended") audioContext.resume();
+      return audioContext;
+    }
+
+    function playTone(frequency, duration, type = "sine", volume = 0.04, delay = 0) {
+      const audio = ensureAudio();
+      if (!audio) return;
+
+      const oscillator = audio.createOscillator();
+      const gain = audio.createGain();
+      const start = audio.currentTime + delay;
+      oscillator.type = type;
+      oscillator.frequency.setValueAtTime(frequency, start);
+      gain.gain.setValueAtTime(0.0001, start);
+      gain.gain.exponentialRampToValueAtTime(Math.max(volume, 0.0002), start + 0.008);
+      gain.gain.exponentialRampToValueAtTime(0.0001, start + duration);
+      oscillator.connect(gain).connect(audio.destination);
+      oscillator.start(start);
+      oscillator.stop(start + duration + 0.02);
+    }
+
+    function playWhoosh(power) {
+      const audio = ensureAudio();
+      if (!audio) return;
+      const oscillator = audio.createOscillator();
+      const gain = audio.createGain();
+      const now = audio.currentTime;
+      oscillator.type = "sine";
+      oscillator.frequency.setValueAtTime(460 + power * 260, now);
+      oscillator.frequency.exponentialRampToValueAtTime(120, now + 0.16);
+      gain.gain.setValueAtTime(0.0001, now);
+      gain.gain.exponentialRampToValueAtTime(0.035 + power * 0.025, now + 0.015);
+      gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.18);
+      oscillator.connect(gain).connect(audio.destination);
+      oscillator.start(now);
+      oscillator.stop(now + 0.2);
+    }
+
+    function playHoleSound() {
+      playTone(523.25, 0.16, "triangle", 0.05, 0);
+      playTone(659.25, 0.18, "triangle", 0.045, 0.10);
+      playTone(783.99, 0.26, "sine", 0.04, 0.20);
+    }
+
+    // -------------------------------------------------------------------------
+    // UI AND CELEBRATION
+    // -------------------------------------------------------------------------
+    function updateHud() {
+      holesValue.textContent = state.holes;
+      shotsValue.textContent = state.shots;
+      totalValue.textContent = state.totalShots;
+    }
+
+    function showToast(message) {
+      toast.textContent = message;
+      toast.classList.remove("show");
+      void toast.offsetWidth;
+      toast.classList.add("show");
+    }
+
+    function celebrate(finale) {
+      if (typeof window.confetti !== "function") return;
+      const count = finale ? CONFIG.confettiAmount * 2.4 : CONFIG.confettiAmount;
+      const defaults = {
+        spread: finale ? 95 : 72,
+        startVelocity: finale ? 47 : 38,
+        gravity: 0.9,
+        ticks: 170,
+        scalar: 0.9,
+        zIndex: 30,
+        disableForReducedMotion: true
+      };
+
+      window.confetti({
+        ...defaults,
+        particleCount: Math.round(count * 0.55),
+        origin: { x: 0.30, y: 0.35 },
+        angle: 62,
+        colors: ["#ffdf5d", "#f15454", "#ffffff", "#79d269", "#66a9ff"]
+      });
+      window.confetti({
+        ...defaults,
+        particleCount: Math.round(count * 0.45),
+        origin: { x: 0.70, y: 0.35 },
+        angle: 118,
+        colors: ["#ffdf5d", "#f15454", "#ffffff", "#79d269", "#66a9ff"]
+      });
+    }
+
+    function showFinish() {
+      finalScore.textContent = state.totalShots;
+      finishModal.classList.add("show");
+      celebrate(true);
+      playTone(523.25, 0.22, "triangle", 0.05, 0);
+      playTone(659.25, 0.24, "triangle", 0.05, 0.12);
+      playTone(783.99, 0.32, "triangle", 0.05, 0.24);
+      playTone(1046.5, 0.42, "sine", 0.045, 0.38);
+    }
+
+    restartButton.addEventListener("click", restartCourse);
+    playAgainButton.addEventListener("click", restartCourse);
+
+    helpButton.addEventListener("click", () => {
+      instructions.classList.toggle("hidden");
+      playTone(380, 0.045, "sine", 0.028);
+    });
+
+    soundButton.addEventListener("click", () => {
+      state.audioEnabled = !state.audioEnabled;
+      soundButton.textContent = state.audioEnabled ? "♪" : "×";
+      soundButton.setAttribute("aria-label", state.audioEnabled ? "Mute sound" : "Enable sound");
+      if (state.audioEnabled) playTone(620, 0.06, "triangle", 0.04);
+    });
+
+    // Subtle wall contact sound, rate-limited so rolling along an edge stays pleasant.
+    Events.on(engine, "collisionStart", event => {
+      if (!state.audioEnabled || state.sinking) return;
+      const now = performance.now();
+      if (now - state.collisionSoundAt < 90) return;
+
+      for (const pair of event.pairs) {
+        const labels = [pair.bodyA.label, pair.bodyB.label];
+        if (labels.includes("golf-ball") && (labels.includes("course-wall") || labels.includes("bumper"))) {
+          if (ball.speed > 1.4) {
+            state.collisionSoundAt = now;
+            playTone(170 + Math.min(ball.speed, 10) * 14, 0.035, "triangle", 0.018);
+          }
+          break;
+        }
+      }
+    });
+
+    // -------------------------------------------------------------------------
+    // RESPONSIVE CANVAS
+    // -------------------------------------------------------------------------
+    function resizeCanvas() {
+      const cssWidth = window.innerWidth;
+      const cssHeight = window.innerHeight;
+      const dpr = Math.min(window.devicePixelRatio || 1, 2);
+      const scale = Math.min(cssWidth / CONFIG.worldWidth, cssHeight / CONFIG.worldHeight);
+      const offsetX = (cssWidth - CONFIG.worldWidth * scale) / 2;
+      const offsetY = (cssHeight - CONFIG.worldHeight * scale) / 2;
+
+      state.viewport = { cssWidth, cssHeight, dpr, scale, offsetX, offsetY };
+      canvas.width = Math.max(1, Math.round(cssWidth * dpr));
+      canvas.height = Math.max(1, Math.round(cssHeight * dpr));
+      canvas.style.width = `${cssWidth}px`;
+      canvas.style.height = `${cssHeight}px`;
+    }
+
+    window.addEventListener("resize", resizeCanvas, { passive: true });
+    window.addEventListener("orientationchange", resizeCanvas, { passive: true });
+
+    // -------------------------------------------------------------------------
+    // CUSTOM CANVAS RENDERER
+    // -------------------------------------------------------------------------
+    function roundedRectPath(context, x, y, width, height, radius) {
+      const r = Math.min(radius, width / 2, height / 2);
+      context.beginPath();
+      context.moveTo(x + r, y);
+      context.arcTo(x + width, y, x + width, y + height, r);
+      context.arcTo(x + width, y + height, x, y + height, r);
+      context.arcTo(x, y + height, x, y, r);
+      context.arcTo(x, y, x + width, y, r);
+      context.closePath();
+    }
+
+    function drawBackdrop() {
+      const gradient = ctx.createLinearGradient(0, 0, 0, CONFIG.worldHeight);
+      gradient.addColorStop(0, "#24765f");
+      gradient.addColorStop(1, "#15503f");
+      ctx.fillStyle = gradient;
+      ctx.fillRect(-120, -120, CONFIG.worldWidth + 240, CONFIG.worldHeight + 240);
+
+      // Mown-grass bands outside the course.
+      ctx.save();
+      ctx.globalAlpha = 0.10;
+      ctx.strokeStyle = "#d9ffd4";
+      ctx.lineWidth = 18;
+      for (let y = -80; y < CONFIG.worldHeight + 100; y += 64) {
+        ctx.beginPath();
+        ctx.moveTo(-100, y);
+        ctx.lineTo(CONFIG.worldWidth + 100, y + 180);
+        ctx.stroke();
+      }
+      ctx.restore();
+
+      // Small garden decorations in the unused margins.
+      const daisies = [
+        [42, 230], [565, 245], [37, 705], [575, 780], [50, 1060], [570, 1020]
+      ];
+      for (const [x, y] of daisies) drawDaisy(x, y, 0.72);
+    }
+
+    function drawCourse() {
+      ctx.save();
+      ctx.shadowColor = "rgba(0,0,0,0.26)";
+      ctx.shadowBlur = 24;
+      ctx.shadowOffsetY = 13;
+      ctx.fillStyle = "#0e392e";
+      ctx.fill(coursePath);
+      ctx.restore();
+
+      ctx.save();
+      ctx.clip(coursePath);
+
+      const greenGradient = ctx.createLinearGradient(0, 70, CONFIG.worldWidth, CONFIG.worldHeight);
+      greenGradient.addColorStop(0, "#55a844");
+      greenGradient.addColorStop(0.52, "#46973d");
+      greenGradient.addColorStop(1, "#3f8a39");
+      ctx.fillStyle = greenGradient;
+      ctx.fillRect(0, 0, CONFIG.worldWidth, CONFIG.worldHeight);
+
+      // Soft mowing pattern.
+      ctx.globalAlpha = 0.08;
+      ctx.fillStyle = "#eaffce";
+      for (let x = -CONFIG.worldHeight; x < CONFIG.worldWidth + CONFIG.worldHeight; x += 72) {
+        ctx.save();
+        ctx.translate(x, 0);
+        ctx.rotate(-0.18);
+        ctx.fillRect(0, -200, 28, CONFIG.worldHeight + 500);
+        ctx.restore();
+      }
+      ctx.globalAlpha = 1;
+
+      // Tee pad.
+      const teeGradient = ctx.createRadialGradient(TEE.x, TEE.y - 8, 8, TEE.x, TEE.y, 112);
+      teeGradient.addColorStop(0, "rgba(122, 194, 82, 0.64)");
+      teeGradient.addColorStop(1, "rgba(46, 122, 48, 0.12)");
+      ctx.fillStyle = teeGradient;
+      ctx.beginPath();
+      ctx.ellipse(TEE.x, TEE.y, 112, 72, 0, 0, Math.PI * 2);
+      ctx.fill();
+
+      drawSlopeZones();
+      drawTerrainSpeckles();
+      ctx.restore();
+
+      ctx.save();
+      ctx.strokeStyle = "#2d722f";
+      ctx.lineWidth = 10;
+      ctx.lineJoin = "round";
+      ctx.stroke(coursePath);
+      ctx.strokeStyle = "rgba(232, 255, 213, 0.28)";
+      ctx.lineWidth = 2.2;
+      ctx.stroke(coursePath);
+      ctx.restore();
+    }
+
+    function drawSlopeZones() {
+      for (const zone of slopeZones) {
+        ctx.save();
+        ctx.fillStyle = zone.tint;
+        ctx.strokeStyle = "rgba(226, 255, 198, 0.19)";
+        ctx.lineWidth = 2;
+
+        if (zone.type === "radial") {
+          ctx.beginPath();
+          ctx.ellipse(zone.body.position.x, zone.body.position.y, zone.radius, zone.radius * 0.68, -0.16, 0, Math.PI * 2);
+          ctx.fill();
+          for (let i = 1; i <= 3; i++) {
+            ctx.beginPath();
+            ctx.ellipse(zone.body.position.x, zone.body.position.y, zone.radius * (i / 4), zone.radius * 0.68 * (i / 4), -0.16, 0, Math.PI * 2);
+            ctx.stroke();
+          }
+        } else {
+          ctx.beginPath();
+          const vertices = zone.body.vertices;
+          ctx.moveTo(vertices[0].x, vertices[0].y);
+          for (let i = 1; i < vertices.length; i++) ctx.lineTo(vertices[i].x, vertices[i].y);
+          ctx.closePath();
+          ctx.fill();
+
+          // Contour lines suggest elevation without cluttering play.
+          ctx.globalAlpha = 0.62;
+          for (let inset = 18; inset <= 48; inset += 15) {
+            const centroid = zone.body.position;
+            ctx.beginPath();
+            const first = vertices[0];
+            ctx.moveTo(first.x + (centroid.x - first.x) * inset / 100, first.y + (centroid.y - first.y) * inset / 100);
+            for (let i = 1; i < vertices.length; i++) {
+              const v = vertices[i];
+              ctx.lineTo(v.x + (centroid.x - v.x) * inset / 100, v.y + (centroid.y - v.y) * inset / 100);
+            }
+            ctx.closePath();
+            ctx.stroke();
+          }
+        }
+        ctx.restore();
+      }
+    }
+
+    function drawTerrainSpeckles() {
+      ctx.save();
+      ctx.fillStyle = "rgba(229, 255, 196, 0.22)";
+      const points = [
+        [130,1040],[386,1008],[132,824],[470,806],[198,680],[505,590],
+        [100,480],[405,440],[200,340],[470,306],[342,190]
+      ];
+      for (const [x, y] of points) {
+        ctx.beginPath();
+        ctx.arc(x, y, 2.2, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      ctx.restore();
+    }
+
+    function drawDaisy(x, y, scale = 1) {
+      ctx.save();
+      ctx.translate(x, y);
+      ctx.scale(scale, scale);
+      ctx.globalAlpha = 0.78;
+      for (let i = 0; i < 6; i++) {
+        ctx.rotate(Math.PI / 3);
+        ctx.fillStyle = "#f6fff1";
+        ctx.beginPath();
+        ctx.ellipse(0, -8, 3.2, 7, 0, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      ctx.fillStyle = "#f4c94d";
+      ctx.beginPath();
+      ctx.arc(0, 0, 4, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.restore();
+    }
+
+    function drawBumpers() {
+      for (const item of decorativeBumpers) {
+        if (item.kind === "stone") {
+          const grad = ctx.createRadialGradient(item.x - 8, item.y - 10, 4, item.x, item.y, item.r + 4);
+          grad.addColorStop(0, "#dce5d5");
+          grad.addColorStop(0.55, "#91a696");
+          grad.addColorStop(1, "#5d7466");
+          ctx.save();
+          ctx.shadowColor = "rgba(0,0,0,.24)";
+          ctx.shadowBlur = 9;
+          ctx.shadowOffsetY = 6;
+          ctx.fillStyle = grad;
+          ctx.beginPath();
+          ctx.arc(item.x, item.y, item.r, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.restore();
+          ctx.strokeStyle = "rgba(255,255,255,.24)";
+          ctx.lineWidth = 2;
+          ctx.stroke();
+        } else {
+          ctx.save();
+          ctx.shadowColor = "rgba(0,0,0,.22)";
+          ctx.shadowBlur = 8;
+          ctx.shadowOffsetY = 5;
+          ctx.fillStyle = "#8a5e3d";
+          ctx.beginPath();
+          ctx.arc(item.x, item.y, item.r, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.restore();
+          ctx.fillStyle = "#315f33";
+          ctx.beginPath();
+          ctx.arc(item.x, item.y - 2, item.r - 4, 0, Math.PI * 2);
+          ctx.fill();
+          drawDaisy(item.x - 8, item.y - 4, 0.55);
+          drawDaisy(item.x + 8, item.y + 1, 0.48);
+          drawDaisy(item.x + 1, item.y - 11, 0.42);
+        }
+      }
+    }
+
+    function drawHoleAndFlag(now) {
+      // Cup shadow and rim.
+      ctx.save();
+      const cupGrad = ctx.createRadialGradient(HOLE.x - 4, HOLE.y - 4, 2, HOLE.x, HOLE.y, 23);
+      cupGrad.addColorStop(0, "#061410");
+      cupGrad.addColorStop(0.65, "#10251d");
+      cupGrad.addColorStop(1, "rgba(15,43,32,0.3)");
+      ctx.fillStyle = cupGrad;
+      ctx.beginPath();
+      ctx.ellipse(HOLE.x, HOLE.y, 23, 15, 0, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.strokeStyle = "rgba(233,255,221,.42)";
+      ctx.lineWidth = 2;
+      ctx.stroke();
+
+      // Pin and gently waving flag.
+      const flagTop = HOLE.y - 104;
+      ctx.shadowColor = "rgba(0,0,0,.18)";
+      ctx.shadowBlur = 5;
+      ctx.lineCap = "round";
+      ctx.strokeStyle = "#f6f1df";
+      ctx.lineWidth = 4;
+      ctx.beginPath();
+      ctx.moveTo(HOLE.x, HOLE.y + 1);
+      ctx.lineTo(HOLE.x, flagTop);
+      ctx.stroke();
+
+      const wave = Math.sin(now * 0.004) * 4;
+      ctx.fillStyle = "#ef4b4b";
+      ctx.beginPath();
+      ctx.moveTo(HOLE.x + 1, flagTop + 1);
+      ctx.quadraticCurveTo(HOLE.x + 35, flagTop + 8 + wave, HOLE.x + 69, flagTop + 20);
+      ctx.lineTo(HOLE.x + 1, flagTop + 39);
+      ctx.closePath();
+      ctx.fill();
+      ctx.restore();
+    }
+
+    function drawBall() {
+      const scale = state.sinkScale;
+      if (scale <= 0.03) return;
+
+      ctx.save();
+      ctx.translate(ball.position.x, ball.position.y);
+      ctx.scale(scale, scale);
+      ctx.rotate(ball.angle);
+
+      ctx.shadowColor = "rgba(0,0,0,.30)";
+      ctx.shadowBlur = 9;
+      ctx.shadowOffsetY = 6;
+
+      const ballGradient = ctx.createRadialGradient(-5, -7, 2, 0, 0, CONFIG.ballRadius + 2);
+      ballGradient.addColorStop(0, "#ffffff");
+      ballGradient.addColorStop(0.65, "#f1f4ee");
+      ballGradient.addColorStop(1, "#bec8bd");
+      ctx.fillStyle = ballGradient;
+      ctx.beginPath();
+      ctx.arc(0, 0, CONFIG.ballRadius, 0, Math.PI * 2);
+      ctx.fill();
+
+      ctx.shadowColor = "transparent";
+      ctx.fillStyle = "rgba(113,130,119,.28)";
+      const dimples = [[-4,-3],[4,-5],[5,3],[-5,5],[0,0]];
+      for (const [x,y] of dimples) {
+        ctx.beginPath();
+        ctx.arc(x, y, 1.15, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      ctx.restore();
+    }
+
+    function drawAimGuide() {
+      if (!state.aiming) return;
+
+      const raw = Vector.sub(ball.position, state.dragPoint);
+      const distance = Math.min(Vector.magnitude(raw), CONFIG.maxDrag);
+      if (distance < 1) return;
+      const direction = Vector.normalise(raw);
+      const pullPoint = Vector.sub(ball.position, Vector.mult(direction, distance));
+      const power = distance / CONFIG.maxDrag;
+      const forwardLength = 58 + power * 110;
+      const arrowEnd = Vector.add(ball.position, Vector.mult(direction, forwardLength));
+
+      ctx.save();
+      ctx.lineCap = "round";
+
+      // Pull-back tether.
+      ctx.setLineDash([8, 9]);
+      ctx.strokeStyle = "rgba(255,255,255,.66)";
+      ctx.lineWidth = 4;
+      ctx.beginPath();
+      ctx.moveTo(ball.position.x, ball.position.y);
+      ctx.lineTo(pullPoint.x, pullPoint.y);
+      ctx.stroke();
+      ctx.setLineDash([]);
+
+      // Shot arrow.
+      const arrowGradient = ctx.createLinearGradient(ball.position.x, ball.position.y, arrowEnd.x, arrowEnd.y);
+      arrowGradient.addColorStop(0, "rgba(255,255,255,.85)");
+      arrowGradient.addColorStop(1, power > 0.68 ? "#ff8b4f" : "#ffe25d");
+      ctx.strokeStyle = arrowGradient;
+      ctx.fillStyle = power > 0.68 ? "#ff8b4f" : "#ffe25d";
+      ctx.lineWidth = 7;
+      ctx.beginPath();
+      ctx.moveTo(ball.position.x + direction.x * 20, ball.position.y + direction.y * 20);
+      ctx.lineTo(arrowEnd.x, arrowEnd.y);
+      ctx.stroke();
+
+      const side = { x: -direction.y, y: direction.x };
+      const headBase = Vector.sub(arrowEnd, Vector.mult(direction, 18));
+      ctx.beginPath();
+      ctx.moveTo(arrowEnd.x, arrowEnd.y);
+      ctx.lineTo(headBase.x + side.x * 11, headBase.y + side.y * 11);
+      ctx.lineTo(headBase.x - side.x * 11, headBase.y - side.y * 11);
+      ctx.closePath();
+      ctx.fill();
+
+      // Power dots.
+      for (let i = 0; i < 4; i++) {
+        const active = power > (i + 1) / 4;
+        const dotPos = Vector.sub(pullPoint, Vector.mult(direction, 16 + i * 14));
+        ctx.fillStyle = active ? (i >= 3 ? "#ff8052" : "#ffe25d") : "rgba(255,255,255,.25)";
+        ctx.beginPath();
+        ctx.arc(dotPos.x, dotPos.y, 4.5, 0, Math.PI * 2);
+        ctx.fill();
+      }
+
+      ctx.restore();
+    }
+
+    function render(now) {
+      const v = state.viewport;
+      ctx.setTransform(1, 0, 0, 1, 0, 0);
+      ctx.fillStyle = "#123f35";
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+      ctx.setTransform(
+        v.dpr * v.scale, 0,
+        0, v.dpr * v.scale,
+        v.dpr * v.offsetX, v.dpr * v.offsetY
+      );
+
+      drawBackdrop();
+      drawCourse();
+      drawBumpers();
+      drawHoleAndFlag(now);
+      drawBall();
+      drawAimGuide();
+    }
+
+    // -------------------------------------------------------------------------
+    // FIXED-STEP GAME LOOP
+    // -------------------------------------------------------------------------
+    function gameLoop(now) {
+      const frameTime = Math.min(now - lastFrame, CONFIG.maxFrameMs);
+      lastFrame = now;
+      accumulator += frameTime;
+
+      while (accumulator >= CONFIG.fixedStepMs) {
+        applySlopeForces();
+        applyCupPhysics(now);
+        Engine.update(engine, CONFIG.fixedStepMs);
+        accumulator -= CONFIG.fixedStepMs;
+      }
+
+      render(now);
+      requestAnimationFrame(gameLoop);
+    }
+
+    // -------------------------------------------------------------------------
+    // START
+    // -------------------------------------------------------------------------
+    buildCourse();
+    resizeCanvas();
+    updateHud();
+    Body.setSleeping(ball, true);
+    requestAnimationFrame(gameLoop);
+  </script>
+</body>
+</html>
