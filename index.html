@@ -11,6 +11,34 @@
   <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.9.4/dist/confetti.browser.min.js"></script>
   <link rel="stylesheet" href="styles.css" />
   <style>
+    #instructions {
+      top: 50%;
+      bottom: auto;
+      transform: translate(-50%, -50%);
+      width: min(86vw, 440px);
+    }
+
+    #instructions.hidden {
+      transform: translate(-50%, calc(-50% + 14px));
+    }
+
+    #helpButton.instructions-open {
+      animation: help-pulse 1.8s ease-in-out infinite;
+    }
+
+    @keyframes help-pulse {
+      0%, 100% {
+        transform: scale(1);
+        background: rgba(255, 255, 255, 0.09);
+        box-shadow: inset 0 1px rgba(255, 255, 255, 0.08), 0 0 0 0 rgba(255, 220, 91, 0);
+      }
+      50% {
+        transform: scale(1.09);
+        background: rgba(255, 220, 91, 0.22);
+        box-shadow: inset 0 1px rgba(255, 255, 255, 0.16), 0 0 0 9px rgba(255, 220, 91, 0.12);
+      }
+    }
+
     #finishModal {
       overflow-y: auto;
       padding-top: max(18px, env(safe-area-inset-top));
@@ -59,6 +87,11 @@
     }
 
     @media (max-width: 520px) {
+      #instructions {
+        width: min(88vw, 390px);
+        padding: 16px 18px;
+      }
+
       .congrats-art {
         max-height: 43dvh;
         margin-bottom: -10px;
@@ -76,6 +109,14 @@
       .congrats-copy p {
         margin: 12px 0 18px;
         font-size: 15px;
+      }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      #helpButton.instructions-open {
+        animation: none;
+        background: rgba(255, 220, 91, 0.22);
+        outline: 2px solid rgba(255, 220, 91, 0.6);
       }
     }
   </style>
@@ -101,7 +142,7 @@
       </div>
 
       <div class="hud-actions">
-        <button class="icon-button" id="helpButton" type="button" aria-label="Show instructions">?</button>
+        <button class="icon-button" id="helpButton" type="button" aria-label="Hide instructions">?</button>
         <button class="icon-button" id="soundButton" type="button" aria-label="Toggle sound" title="Sound (M)">♪</button>
         <button class="icon-button" id="recoverButton" type="button" aria-label="Return ball to previous position with one penalty stroke" title="Recover ball (+1)">↶</button>
         <button class="icon-button" id="restartButton" type="button" aria-label="Restart course" title="Restart course (R)">↻</button>
@@ -110,7 +151,7 @@
 
     <aside id="instructions">
       <strong>Pull back, then release</strong>
-      <span>Start on the glowing ball. Drag opposite the shot direction. Longer means stronger. Use ↶ if the ball gets stuck.</span>
+      <span>Start on the glowing ball. Drag opposite the shot direction. Longer means stronger. Tap the pulsing ? to close this card.</span>
     </aside>
 
     <div id="toast" role="status" aria-live="polite">Nice!</div>
